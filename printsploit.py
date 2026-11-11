@@ -165,7 +165,6 @@ class printsploit:
         self.handle = None
         self.print_rva = None
         self.io_port_handle = None
-        self.base_address = None
 
     def enable_debug_privilege(self) -> bool:
         token = wt.HANDLE()
@@ -418,3 +417,4 @@ if __name__ == "__main__":
     sploit.send("testing fire, error print", 3)
     sploit.send("testing fire, info print", 1)
     sploit.send("testing fire, warning print", 2)
+    
