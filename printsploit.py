@@ -2,6 +2,9 @@ import ctypes
 import ctypes.wintypes as wt
 import re
 import struct
+import json
+import os
+import time
 
 kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
 ntdll = ctypes.WinDLL("ntdll.dll", use_last_error=True)
@@ -156,10 +159,14 @@ class dumper:
 
 class printsploit:
     tp_direct_size = 72
+    cache_file = "offsetcache.json"
 
     def __init__(self):
         self.handle = None
         self.print_rva = None
+        self.io_port_handle = None
+        self.base_address = None
+        self.version = None
 
     def enable_debug_privilege(self) -> bool:
         token = wt.HANDLE()
@@ -276,6 +283,9 @@ class printsploit:
         return bytes(sc)
 
     def find_io_completion_port(self) -> int:
+        if self.io_port_handle:
+            return self.io_port_handle
+
         type_info = (ctypes.c_ubyte * 10000)()
         for candidate in range(4, 8192, 4):
             dup = wt.HANDLE()
@@ -299,6 +309,8 @@ class printsploit:
                             pass
             kernel32.CloseHandle(dup)
         raise RuntimeError("failed to find IoCompletion handle")
+
+
 
     def find_code_cave(self) -> int:
         mbi = MEMORY_BASIC_INFORMATION()
@@ -338,12 +350,34 @@ class printsploit:
             if status < 0:
                 raise RuntimeError(f"failed to set IO completion, status 0x{status & 0xFFFFFFFF:X}")
         finally:
-            kernel32.CloseHandle(ctypes.c_void_p(port))
+            if not self.io_port_handle:
+                kernel32.CloseHandle(ctypes.c_void_p(port))
 
     def resolve_print_rva(self) -> int:
-        if self.print_rva is None:
-            self.print_rva = dumper(self).dump()
-            print(f"print offset resolved: 0x{self.print_rva:x}")
+        if self.print_rva is not None:
+            return self.print_rva
+
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    cache = json.load(f)
+                    self.print_rva = cache.get("print_rva")
+                    if self.print_rva:
+                        print(f"loaded cached print offset: 0x{self.print_rva:x}")
+                    if time.time() - os.path.getmtime(self.cache_file) < 86400:
+                        return self.print_rva
+            except (json.JSONDecodeError, IOError):
+                print("failed to read cache file, ignoring...")
+
+        self.print_rva = dumper(self).dump()
+        print(f"print offset resolved: 0x{self.print_rva:x}")
+        
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump({"print_rva": self.print_rva}, f)
+            print(f"saved print offset to {self.cache_file}")
+        except IOError as e:
+            print(f"failed to write cache file{e}")
         return self.print_rva
 
     def send(self, message: str, level: int = 0):
@@ -352,9 +386,10 @@ class printsploit:
             pid = self.find_process_id("RobloxPlayerBeta.exe")
             if not pid:
                 raise RuntimeError("target process not found")
-            self.handle = kernel32.OpenProcess(0x1F0FFF, False, pid)
             if not self.handle:
-                raise RuntimeError("process access denied (try running as admin)")
+                self.handle = kernel32.OpenProcess(0x1F0FFF, False, pid)
+                if not self.handle:
+                    raise RuntimeError("process access denied (try running as admin)")
             try:
                 rva = self.resolve_print_rva()
                 shellcode = self.build_shellcode(message, level, rva)
@@ -367,10 +402,13 @@ class printsploit:
                     self.free(remote)
                     raise
             finally:
-                kernel32.CloseHandle(self.handle)
-                self.handle = None
+                pass
         except RuntimeError as e:
             print(f"[!] {e}")
+            if "no call site" in str(e) or "candidate rejected" in str(e):
+                if os.path.exists(self.cache_file):
+                    os.remove(self.cache_file)
+                    print("likely an invalidated or outdated cache file, removing it...")
             return
         print(f"injected successfully: {message}")
 
