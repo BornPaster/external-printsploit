@@ -166,7 +166,6 @@ class printsploit:
         self.print_rva = None
         self.io_port_handle = None
         self.base_address = None
-        self.version = None
 
     def enable_debug_privilege(self) -> bool:
         token = wt.HANDLE()
