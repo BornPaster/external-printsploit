@@ -362,7 +362,7 @@ class printsploit:
                     self.print_rva = cache.get("print_rva")
                     if self.print_rva:
                         print(f"loaded cached print offset: 0x{self.print_rva:x}")
-                    if time.time() - os.path.getmtime(self.cache_file) < 86400:
+                    if time.time() - os.path.getmtime(self.cache_file) < 7200:
                         return self.print_rva
             except (json.JSONDecodeError, IOError):
                 print("failed to read cache file, ignoring...")
@@ -417,4 +417,3 @@ if __name__ == "__main__":
     sploit.send("testing fire, error print", 3)
     sploit.send("testing fire, info print", 1)
     sploit.send("testing fire, warning print", 2)
-    
